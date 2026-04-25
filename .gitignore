@@ -1,0 +1,8 @@
+# Временные файлы
+*.m3u
+history
+movie-cli-last
+
+# Кэш
+.cache/
+tmp/
