@@ -1,51 +1,50 @@
 #!/bin/bash
 
 # --- Настройки ---
-# Используем Shikimori API для аниме и публичный хаб для Кинопоиска
+# Используем RSS Rutor для новинок кино и Shikimori для аниме
+RUTOR_RSS="http://rutor.info/rss.php?category=1" # Фильмы
+RUTOR_SERIES_RSS="http://rutor.info/rss.php?category=4" # Сериалы
 SHIKIMORI_URL="https://shikimori.one/api/animes"
-# Для Кинопоиска используем открытый агрегатор трендов
-KP_URL="https://api.kinopoisk.dev/v1.4/movie"
-KP_TOKEN="Z8699G5-M7G4M68-N3P5G9K-H9B7P5G" # Публичный демо-токен
 
-echo "🍿 Что будем смотреть сегодня?"
-echo "1) 🎬 Популярные фильмы (Кинопоиск)"
-echo "2) 📺 Трендовые сериалы (Кинопоиск)"
-echo "3) ⛩️ Топ аниме (Shikimori)"
+echo "🍿 Новинки и тренды:"
+echo "1) 🎬 Новинки кино (Rutor)"
+echo "2) 📺 Свежие серии (Rutor)"
+echo "3) ⛩️ Популярное аниме (Shikimori)"
 echo -n "👉 Ваш выбор: "
 read -r CAT_CHOICE
 
-echo "📡 Загружаю российский топ..."
+echo "📡 Загружаю список..."
 
 case $CAT_CHOICE in
     1)
-        # Топ фильмов по рейтингу и популярности
-        RESPONSE=$(curl -s -H "X-API-KEY: $KP_TOKEN" "$KP_URL?limit=20&page=1&selectFields=name&selectFields=description&selectFields=rating&selectFields=year&sortField=rating.kp&sortType=-1&type=movie")
-        CHOICE=$(echo "$RESPONSE" | jq -r '.docs[] | "\(.rating.kp) | \(.name) (\(.year)) @@@ \(.description)"' | \
-            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="🔥 Топ Кинопоиска" --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
+        # Парсим RSS Rutor через простую обработку текста
+        RESPONSE=$(curl -s -L --connect-timeout 10 "$RUTOR_RSS")
+        CHOICE=$(echo "$RESPONSE" | grep -oP '(?<=<title>).*?(?=</title>)' | tail -n +2 | \
+            fzf --height=80% --reverse --header="🔥 Новинки Кино (Rutor)")
         ;;
     2)
-        # Топ сериалов
-        RESPONSE=$(curl -s -H "X-API-KEY: $KP_TOKEN" "$KP_URL?limit=20&page=1&selectFields=name&selectFields=description&selectFields=rating&selectFields=year&sortField=rating.kp&sortType=-1&type=tv-series")
-        CHOICE=$(echo "$RESPONSE" | jq -r '.docs[] | "\(.rating.kp) | \(.name) (\(.year)) @@@ \(.description)"' | \
-            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="📺 Популярные сериалы" --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
+        RESPONSE=$(curl -s -L --connect-timeout 10 "$RUTOR_SERIES_RSS")
+        CHOICE=$(echo "$RESPONSE" | grep -oP '(?<=<title>).*?(?=</title>)' | tail -n +2 | \
+            fzf --height=80% --reverse --header="📺 Свежие Серии (Rutor)")
         ;;
     3)
-        # Аниме через Shikimori (полностью открыто)
-        RESPONSE=$(curl -s "$SHIKIMORI_URL?order=popularity&limit=20&kind=tv")
-        CHOICE=$(echo "$RESPONSE" | jq -r '.[] | "\(.score) | \(.russian // .name) @@@ Статус: \(.status)\nТип: \(.kind)"' | \
-            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="⛩️ Популярное Аниме (Shikimori)" --preview 'echo -e "📖 ИНФОРМАЦИЯ:\n\n{2}"' --preview-window=right:50%:wrap)
+        RESPONSE=$(curl -s "https://shikimori.one/api/animes?order=popularity&limit=30&kind=tv")
+        CHOICE=$(echo "$RESPONSE" | jq -r '.[] | "\(.score) | \(.russian // .name) @@@ \(.status)"' | \
+            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="⛩️ Аниме Тренды (Shikimori)")
         ;;
     *) echo "Отмена."; exit 0 ;;
 esac
 
 [ -z "$CHOICE" ] && exit 0
 
-# Извлекаем название для поиска
-MOVIE_TITLE=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}' | sed -E 's/^[0-9\.]+ \| (.*) \(.*\)$/\1/')
-
-if [ -z "$MOVIE_TITLE" ]; then
+# Очистка названия для Rutor (убираем лишнее из заголовка RSS)
+if [[ "$CAT_CHOICE" == "1" || "$CAT_CHOICE" == "2" ]]; then
+    # Названия на Rutor часто содержат год и качество, fmovie с этим справится
+    MOVIE_TITLE=$(echo "$CHOICE" | sed -E 's/ \[[^]]+\]//g')
+else
+    # Для аниме
     MOVIE_TITLE=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}' | cut -d'|' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 fi
 
-echo "🔍 Ищу в качестве: $MOVIE_TITLE..."
+echo "🔍 Ищу: $MOVIE_TITLE..."
 fmovie "$MOVIE_TITLE"
