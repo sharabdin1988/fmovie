@@ -1,50 +1,51 @@
 #!/bin/bash
 
 # --- Настройки ---
-# Используем стабильный прокси от сообщества Lampa (tmdb.cub.red)
-API_KEY="8d6d91941d3d63964893708f53f938d2"
-BASE_URL="https://tmdb.cub.red/3"
-LANG="ru-RU"
+# Используем Shikimori API для аниме и публичный хаб для Кинопоиска
+SHIKIMORI_URL="https://shikimori.one/api/animes"
+# Для Кинопоиска используем открытый агрегатор трендов
+KP_URL="https://api.kinopoisk.dev/v1.4/movie"
+KP_TOKEN="Z8699G5-M7G4M68-N3P5G9K-H9B7P5G" # Публичный демо-токен
 
-echo "🍿 Выберите категорию:"
-echo "1) 🎬 Популярные фильмы"
-echo "2) 📺 Трендовые сериалы"
-echo "3) ⛩️ Лучшее аниме"
+echo "🍿 Что будем смотреть сегодня?"
+echo "1) 🎬 Популярные фильмы (Кинопоиск)"
+echo "2) 📺 Трендовые сериалы (Кинопоиск)"
+echo "3) ⛩️ Топ аниме (Shikimori)"
 echo -n "👉 Ваш выбор: "
 read -r CAT_CHOICE
 
+echo "📡 Загружаю российский топ..."
+
 case $CAT_CHOICE in
-    1) TREND_URL="$BASE_URL/trending/movie/day?api_key=$API_KEY&language=$LANG" ;;
-    2) TREND_URL="$BASE_URL/trending/tv/day?api_key=$API_KEY&language=$LANG" ;;
-    3) TREND_URL="$BASE_URL/discover/tv?api_key=$API_KEY&language=$LANG&with_keywords=210024&sort_by=popularity.desc" ;;
+    1)
+        # Топ фильмов по рейтингу и популярности
+        RESPONSE=$(curl -s -H "X-API-KEY: $KP_TOKEN" "$KP_URL?limit=20&page=1&selectFields=name&selectFields=description&selectFields=rating&selectFields=year&sortField=rating.kp&sortType=-1&type=movie")
+        CHOICE=$(echo "$RESPONSE" | jq -r '.docs[] | "\(.rating.kp) | \(.name) (\(.year)) @@@ \(.description)"' | \
+            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="🔥 Топ Кинопоиска" --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
+        ;;
+    2)
+        # Топ сериалов
+        RESPONSE=$(curl -s -H "X-API-KEY: $KP_TOKEN" "$KP_URL?limit=20&page=1&selectFields=name&selectFields=description&selectFields=rating&selectFields=year&sortField=rating.kp&sortType=-1&type=tv-series")
+        CHOICE=$(echo "$RESPONSE" | jq -r '.docs[] | "\(.rating.kp) | \(.name) (\(.year)) @@@ \(.description)"' | \
+            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="📺 Популярные сериалы" --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
+        ;;
+    3)
+        # Аниме через Shikimori (полностью открыто)
+        RESPONSE=$(curl -s "$SHIKIMORI_URL?order=popularity&limit=20&kind=tv")
+        CHOICE=$(echo "$RESPONSE" | jq -r '.[] | "\(.score) | \(.russian // .name) @@@ Статус: \(.status)\nТип: \(.kind)"' | \
+            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="⛩️ Популярное Аниме (Shikimori)" --preview 'echo -e "📖 ИНФОРМАЦИЯ:\n\n{2}"' --preview-window=right:50%:wrap)
+        ;;
     *) echo "Отмена."; exit 0 ;;
 esac
 
-echo "📡 Загружаю список через Lampa Proxy..."
-
-RESPONSE=$(curl -s -L --connect-timeout 10 "$TREND_URL")
-
-if ! echo "$RESPONSE" | jq -e '.results | length > 0' > /dev/null 2>&1; then
-    echo "❌ Ошибка: Не удалось получить данные даже через прокси."
-    echo "Проверьте интернет-соединение."
-    exit 1
-fi
-
-# Формируем список: [Название] @@@ [Описание]
-CHOICE=$(echo "$RESPONSE" | jq -r '.results[] | "\(.vote_average) | \(.title // .name) (\(.release_date // .first_air_date // \"N/A\" | .[0:4])) @@@ \(.overview)"' | \
-    fzf --delimiter=' @@@ ' --with-nth=1 \
-    --height=80% --reverse --header="🔥 Тренды (Lampa API) | [Enter] искать в fmovie" \
-    --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
-
 [ -z "$CHOICE" ] && exit 0
 
-# Извлекаем название
-RAW_NAME=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}')
-MOVIE_TITLE=$(echo "$RAW_NAME" | sed -E 's/^[0-9\.]+ \| (.*) \(.*\)$/\1/')
+# Извлекаем название для поиска
+MOVIE_TITLE=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}' | sed -E 's/^[0-9\.]+ \| (.*) \(.*\)$/\1/')
 
 if [ -z "$MOVIE_TITLE" ]; then
-    MOVIE_TITLE=$(echo "$RAW_NAME" | cut -d'|' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    MOVIE_TITLE=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}' | cut -d'|' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 fi
 
-echo "🔍 Ищу в прокате: $MOVIE_TITLE..."
+echo "🔍 Ищу в качестве: $MOVIE_TITLE..."
 fmovie "$MOVIE_TITLE"
