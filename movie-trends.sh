@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # --- Настройки ---
-# Используем публичный API TMDB через прокси-зеркало для стабильности
+# Используем стабильный прокси от сообщества Lampa (tmdb.cub.red)
 API_KEY="8d6d91941d3d63964893708f53f938d2"
-BASE_URL="https://api.tmdb.org/3" # Пробуем основной домен через HTTPS
+BASE_URL="https://tmdb.cub.red/3"
 LANG="ru-RU"
 
 echo "🍿 Выберите категорию:"
@@ -20,39 +20,28 @@ case $CAT_CHOICE in
     *) echo "Отмена."; exit 0 ;;
 esac
 
-echo "📡 Загружаю список..."
+echo "📡 Загружаю список через Lampa Proxy..."
 
-# Используем curl с таймаутом и проверкой ошибок
 RESPONSE=$(curl -s -L --connect-timeout 10 "$TREND_URL")
 
-# Проверка на пустой ответ или ошибку
-if [ -z "$RESPONSE" ] || [[ $RESPONSE == *"status_message"* ]]; then
-    echo "⚠️ Проблема с основным сервером. Пробую зеркало..."
-    # Попытка через публичный прокси-сервер (иногда помогает)
-    RESPONSE=$(curl -s -L "https://tmdb-proxy.api.workers.dev/3/${TREND_URL#$BASE_URL/}")
-fi
-
 if ! echo "$RESPONSE" | jq -e '.results | length > 0' > /dev/null 2>&1; then
-    echo "❌ Ошибка: Не удалось получить данные. Попробуйте включить VPN или повторить позже."
-    # Выведем ответ для диагностики, если он не секретный
-    # echo "$RESPONSE" | head -c 100
+    echo "❌ Ошибка: Не удалось получить данные даже через прокси."
+    echo "Проверьте интернет-соединение."
     exit 1
 fi
 
 # Формируем список: [Название] @@@ [Описание]
 CHOICE=$(echo "$RESPONSE" | jq -r '.results[] | "\(.vote_average) | \(.title // .name) (\(.release_date // .first_air_date // \"N/A\" | .[0:4])) @@@ \(.overview)"' | \
     fzf --delimiter=' @@@ ' --with-nth=1 \
-    --height=80% --reverse --header="🔥 Выберите и нажмите Enter" \
+    --height=80% --reverse --header="🔥 Тренды (Lampa API) | [Enter] искать в fmovie" \
     --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
 
 [ -z "$CHOICE" ] && exit 0
 
 # Извлекаем название
 RAW_NAME=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}')
-# Убираем рейтинг и год, оставляя только название
 MOVIE_TITLE=$(echo "$RAW_NAME" | sed -E 's/^[0-9\.]+ \| (.*) \(.*\)$/\1/')
 
-# Если sed не сработал (например, нет года), берем всё между | и @@@
 if [ -z "$MOVIE_TITLE" ]; then
     MOVIE_TITLE=$(echo "$RAW_NAME" | cut -d'|' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 fi
