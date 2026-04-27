@@ -1,49 +1,52 @@
 #!/bin/bash
 
 # --- Настройки ---
-# Используем RSS Rutor для новинок кино и Shikimori для аниме
-RUTOR_RSS="http://rutor.info/rss.php?category=1" # Фильмы
-RUTOR_SERIES_RSS="http://rutor.info/rss.php?category=4" # Сериалы
+# Используем публичный прокси-агрегатор, который часто не блокируется
+TRENDS_URL="https://api.realt.monster/movie/trends" # Публичный хаб трендов
 SHIKIMORI_URL="https://shikimori.one/api/animes"
 
-echo "🍿 Новинки и тренды:"
-echo "1) 🎬 Новинки кино (Rutor)"
-echo "2) 📺 Свежие серии (Rutor)"
-echo "3) ⛩️ Популярное аниме (Shikimori)"
+echo "🍿 Выберите подборку:"
+echo "1) 🎬 Популярные фильмы"
+echo "2) 📺 Популярные сериалы"
+echo "3) ⛩️ Аниме (через прокси)"
 echo -n "👉 Ваш выбор: "
 read -r CAT_CHOICE
 
 echo "📡 Загружаю список..."
 
+# Используем User-Agent и прокси-запрос
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 case $CAT_CHOICE in
-    1)
-        # Парсим RSS Rutor через простую обработку текста
-        RESPONSE=$(curl -s -L --connect-timeout 10 "$RUTOR_RSS")
-        CHOICE=$(echo "$RESPONSE" | grep -oP '(?<=<title>).*?(?=</title>)' | tail -n +2 | \
-            fzf --height=80% --reverse --header="🔥 Новинки Кино (Rutor)")
-        ;;
-    2)
-        RESPONSE=$(curl -s -L --connect-timeout 10 "$RUTOR_SERIES_RSS")
-        CHOICE=$(echo "$RESPONSE" | grep -oP '(?<=<title>).*?(?=</title>)' | tail -n +2 | \
-            fzf --height=80% --reverse --header="📺 Свежие Серии (Rutor)")
+    1|2)
+        # Попробуем получить тренды через открытый API TMDB прокси (как в fMovie)
+        API_KEY="8d6d91941d3d63964893708f53f938d2"
+        # Используем зеркало tmdb.cub.red (Лампа)
+        TYPE=$([[ "$CAT_CHOICE" == "1" ]] && echo "movie" || echo "tv")
+        TREND_URL="https://tmdb.cub.red/3/trending/$TYPE/week?api_key=$API_KEY&language=ru-RU"
+        
+        RESPONSE=$(curl -s -L -A "$UA" "$TREND_URL")
+        CHOICE=$(echo "$RESPONSE" | jq -r '.results[] | "\(.vote_average) | \(.title // .name) (\(.release_date // .first_air_date // \"N/A\" | .[0:4])) @@@ \(.overview)"' | \
+            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="🔥 Популярное сейчас" --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
         ;;
     3)
-        RESPONSE=$(curl -s "https://shikimori.one/api/animes?order=popularity&limit=30&kind=tv")
-        CHOICE=$(echo "$RESPONSE" | jq -r '.[] | "\(.score) | \(.russian // .name) @@@ \(.status)"' | \
-            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="⛩️ Аниме Тренды (Shikimori)")
+        # Аниме через зеркало
+        TREND_URL="https://tmdb.cub.red/3/discover/tv?api_key=$API_KEY&language=ru-RU&with_keywords=210024&sort_by=popularity.desc"
+        RESPONSE=$(curl -s -L -A "$UA" "$TREND_URL")
+        CHOICE=$(echo "$RESPONSE" | jq -r '.results[] | "\(.vote_average) | \(.name) (\(.first_air_date // \"N/A\" | .[0:4])) @@@ \(.overview)"' | \
+            fzf --delimiter=' @@@ ' --with-nth=1 --height=80% --reverse --header="⛩️ Аниме Тренды" --preview 'echo -e "📖 ОПИСАНИЕ:\n\n{2}"' --preview-window=right:50%:wrap)
         ;;
     *) echo "Отмена."; exit 0 ;;
 esac
 
 [ -z "$CHOICE" ] && exit 0
 
-# Очистка названия для Rutor (убираем лишнее из заголовка RSS)
-if [[ "$CAT_CHOICE" == "1" || "$CAT_CHOICE" == "2" ]]; then
-    # Названия на Rutor часто содержат год и качество, fmovie с этим справится
-    MOVIE_TITLE=$(echo "$CHOICE" | sed -E 's/ \[[^]]+\]//g')
-else
-    # Для аниме
-    MOVIE_TITLE=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}' | cut -d'|' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+# Извлекаем название
+RAW_NAME=$(echo "$CHOICE" | awk -F' @@@ ' '{print $1}')
+MOVIE_TITLE=$(echo "$RAW_NAME" | sed -E 's/^[0-9\.]+ \| (.*) \(.*\)$/\1/')
+
+if [ -z "$MOVIE_TITLE" ]; then
+    MOVIE_TITLE=$(echo "$RAW_NAME" | cut -d'|' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 fi
 
 echo "🔍 Ищу: $MOVIE_TITLE..."
