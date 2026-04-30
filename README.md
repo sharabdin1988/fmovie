@@ -13,17 +13,20 @@
 - ↩️ **Умная история (Resume)**: Запоминает последний просмотренный фильм и позицию остановки. Запускается командой `--resume`.
 - 🚀 **Обход блокировок**: Использует стабильный публичный API-агрегатор для поиска по RuTracker, Rutor, Kinozal и зарубежным трекерам.
 - 🌋 **Оптимизация видео**: Полная поддержка аппаратного ускорения и Vulkan API для плавного воспроизведения 4K.
-- 🐧 **Универсальность**: Один инсталлятор для Arch Linux, CachyOS и Ubuntu/Debian.
+- 🐧 **Универсальность**: Один инсталлятор для Arch Linux, CachyOS, Ubuntu/Debian и **macOS**.
 
 ---
 
 ## 🛠 Требования
 
-Для корректной работы требуются:
-- **mpv** (медиаплеер)
-- **TorrServer MatriX** (движок стриминга)
-- **jq** и **curl** (работа с API)
-- **fzf** (для интерактивного меню)
+### Для Linux:
+- **mpv**, **jq**, **curl**, **fzf**.
+
+### Для macOS:
+Для установки зависимостей требуется установленный пакетный менеджер **Homebrew**. Если он у вас не установлен, выполните:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
 
 ---
 
@@ -33,7 +36,7 @@
 
 ```bash
 git clone https://github.com/sharabdin1988/fmovie.git
-cd movie-cli
+cd fmovie
 chmod +x setup_all.sh
 ./setup_all.sh
 ```

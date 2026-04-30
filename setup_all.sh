@@ -4,7 +4,7 @@
 BIN_PATH="$HOME/.local/bin"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🎬 Установка/Обновление Movie-CLI (movie + fmovie + movie-trends)..."
+echo "🎬 Установка/Обновление Movie-CLI (movie + fmovie)..."
 
 # 1. Установка зависимостей
 OS="$(uname -s)"
@@ -37,9 +37,8 @@ echo "📂 Копирование скриптов в $BIN_PATH..."
 mkdir -p "$BIN_PATH"
 cp "$SCRIPT_DIR/movie.sh" "$BIN_PATH/movie"
 cp "$SCRIPT_DIR/fmovie.sh" "$BIN_PATH/fmovie"
-cp "$SCRIPT_DIR/movie-trends.sh" "$BIN_PATH/movie-trends"
 
-chmod +x "$BIN_PATH/movie" "$BIN_PATH/fmovie" "$BIN_PATH/movie-trends"
+chmod +x "$BIN_PATH/movie" "$BIN_PATH/fmovie"
 
 # 3. Настройка PATH
 echo "🛠 Настройка переменных окружения..."
@@ -62,7 +61,6 @@ if command -v fish >/dev/null 2>&1; then
     mkdir -p "$HOME/.config/fish/functions"
     echo "function movie; $BIN_PATH/movie \$argv; end" > "$HOME/.config/fish/functions/movie.fish"
     echo "function fmovie; $BIN_PATH/fmovie \$argv; end" > "$HOME/.config/fish/functions/fmovie.fish"
-    echo "function movie-trends; $BIN_PATH/movie-trends \$argv; end" > "$HOME/.config/fish/functions/movie-trends.fish"
     fish -c "set -U fish_user_paths $BIN_PATH \$fish_user_paths" 2>/dev/null
     echo "✨ Настройки для Fish применены"
 fi
@@ -71,7 +69,6 @@ echo "--------------------------------------------------"
 echo "✅ УСТАНОВКА ЗАВЕРШЕНА!"
 echo "🚀 'movie'        - классический список"
 echo "🚀 'fmovie'       - живой поиск (fzf)"
-echo "🚀 'movie-trends' - популярные фильмы 🔥"
 echo "--------------------------------------------------"
 if [ -n "$CONFIG_FILE" ]; then
     echo "💡 Перезапустите терминал или выполните: source $CONFIG_FILE"
