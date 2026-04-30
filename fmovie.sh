@@ -5,7 +5,14 @@ JACKETT_URL="https://jac-red.ru"
 API_KEY="00000000000000000000000000000000"
 TORRSERVER_URL="http://localhost:8090"
 HISTORY_FILE="$HOME/.cache/movie-cli-last"
-SELF=$(realpath "$0")
+if command -v realpath >/dev/null 2>&1; then
+    SELF=$(realpath "$0")
+else
+    # Фоллбек для macOS без coreutils
+    SELF=$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$0" 2>/dev/null || \
+           perl -MCwd -e "print Cwd::abs_path(\$ARGV[0])" "$0" 2>/dev/null || \
+           echo "$0")
+fi
 
 mkdir -p "$(dirname "$HISTORY_FILE")"
 
