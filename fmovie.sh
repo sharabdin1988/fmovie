@@ -5,23 +5,57 @@ JACKETT_URL="https://jac-red.ru"
 API_KEY="00000000000000000000000000000000"
 TORRSERVER_URL="http://localhost:8090"
 HISTORY_FILE="$HOME/.cache/movie-cli-last"
+SUB_DIR="$HOME/.cache/mpv_subs"
+SUBLIMINAL="/Users/sharabdin/Library/Python/3.9/bin/subliminal"
+
 if command -v realpath >/dev/null 2>&1; then
     SELF=$(realpath "$0")
 else
-    # Фоллбек для macOS без coreutils
     SELF=$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$0" 2>/dev/null || \
            perl -MCwd -e "print Cwd::abs_path(\$ARGV[0])" "$0" 2>/dev/null || \
            echo "$0")
 fi
 
-mkdir -p "$(dirname "$HISTORY_FILE")"
+mkdir -p "$(dirname "$HISTORY_FILE")" "$SUB_DIR"
 
 # Функция запуска mpv
 play_video() {
-    if [[ "$1" == *.m3u ]]; then
-        mpv --save-position-on-quit --title="Movie-CLI: $2" --playlist="$1"
+    local URL="$1"
+    local TITLE="$2"
+    local EXTRA_ARGS=("${@:3}")
+    
+    if [[ "$URL" == *.m3u ]]; then
+        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" --playlist="$URL" "${EXTRA_ARGS[@]}"
     else
-        mpv --save-position-on-quit --title="Movie-CLI: $2" "$1"
+        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" "$URL" "${EXTRA_ARGS[@]}"
+    fi
+}
+
+# Функция поиска субтитров в терминале
+get_subtitles() {
+    local TITLE="$1"
+    echo "🔍 Поиск субтитров для: $TITLE..."
+    
+    # Получаем список
+    local SUB_LIST=$($SUBLIMINAL list -l ru -l en "$TITLE" 2>/dev/null | grep "<")
+    
+    if [ -z "$SUB_LIST" ]; then
+        echo "❌ Субтитры не найдены."
+        return 1
+    fi
+    
+    local CHOICE=$(echo "$SUB_LIST" | fzf --header "💬 Выберите субтитры (Esc для отмены)" --reverse --height=40%)
+    
+    if [ -n "$CHOICE" ]; then
+        local LANG=$(echo "$CHOICE" | grep -o "\[[a-z][a-z]\]" | tr -d '[]')
+        echo "⏳ Загрузка [$LANG]..."
+        $SUBLIMINAL download -l "$LANG" --directory "$SUB_DIR" "$TITLE" >/dev/null 2>&1
+        
+        # Находим скачанный файл (самый свежий в папке с этим названием)
+        local SUB_FILE=$(ls -t "$SUB_DIR" | head -n 1)
+        if [ -n "$SUB_FILE" ]; then
+            echo "--sub-file=$SUB_DIR/$SUB_FILE"
+        fi
     fi
 }
 
@@ -71,55 +105,44 @@ while true; do
 
     if echo "$FILES" | jq -e 'type == "array"' > /dev/null; then FILES=$(echo "$FILES" | jq '.[0]'); fi
 
-    # Фильтруем медиафайлы
     VIDEO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
     AUDIO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mp3|flac|wav|m4a|ogg|aac|opus)$"; "i"))')
 
-    # Списки имен и ID для вывода
     IFS=$'\n' read -r -d '' -a V_NAMES < <(echo "$VIDEO_FILES_JSON" | jq -r '.path' && printf '\0')
     IFS=$'\n' read -r -d '' -a V_IDS < <(echo "$VIDEO_FILES_JSON" | jq -r '.id' && printf '\0')
     IFS=$'\n' read -r -d '' -a A_NAMES < <(echo "$AUDIO_FILES_JSON" | jq -r '.path' && printf '\0')
     IFS=$'\n' read -r -d '' -a A_IDS < <(echo "$AUDIO_FILES_JSON" | jq -r '.id' && printf '\0')
 
-    # Общее количество медиафайлов
     TOTAL_MEDIA=$(( ${#V_NAMES[@]} + ${#A_NAMES[@]} ))
 
     if [ $TOTAL_MEDIA -gt 1 ]; then
         LIST_FILE=$(mktemp)
         [ ${#V_NAMES[@]} -gt 0 ] && echo -e "ALL_VIDEO\t00) 📺 ИГРАТЬ ВСЁ ВИДЕО" > "$LIST_FILE"
         [ ${#A_NAMES[@]} -gt 0 ] && echo -e "ALL_AUDIO\t00) 🎵 ИГРАТЬ ВСЁ АУДИО" >> "$LIST_FILE"
-        
-        # Добавляем видео в список
-        for i in "${!V_NAMES[@]}"; do
-            echo -e "${V_IDS[$i]}\t$(basename "${V_NAMES[$i]}")" >> "$LIST_FILE"
-        done
-        # Добавляем аудио в список
-        for i in "${!A_NAMES[@]}"; do
-            echo -e "${A_IDS[$i]}\t$(basename "${A_NAMES[$i]}")" >> "$LIST_FILE"
-        done
-        
-        FILE_CHOICE=$(cat "$LIST_FILE" | fzf --delimiter='\t' --with-nth=2 --height=40% --reverse --header="📺 Выберите файл (Esc для возврата в поиск)")
+        for i in "${!V_NAMES[@]}"; do echo -e "${V_IDS[$i]}\t$(basename "${V_NAMES[$i]}")" >> "$LIST_FILE"; done
+        for i in "${!A_NAMES[@]}"; do echo -e "${A_IDS[$i]}\t$(basename "${A_NAMES[$i]}")" >> "$LIST_FILE"; done
+        FILE_CHOICE=$(cat "$LIST_FILE" | fzf --delimiter='\t' --with-nth=2 --height=40% --reverse --header="📺 Выберите файл (Esc для возврата)")
         rm "$LIST_FILE"
-        
         FID=$(echo "$FILE_CHOICE" | cut -f1)
     else
-        # Если файл всего один (любого типа)
         FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
     fi
 
     if [ -n "$FID" ]; then
+        # Перед запуском спрашиваем про субтитры (только для видео)
+        SUB_ARG=""
+        if [ "$FID" != "ALL_AUDIO" ] && [ ${#V_NAMES[@]} -gt 0 ]; then
+             read -p "💬 Найти субтитры? (y/N): " -n 1 -r
+             echo
+             if [[ $REPLY =~ ^[Yy]$ ]]; then
+                 SUB_ARG=$(get_subtitles "$TITLE")
+             fi
+        fi
+
         if [ "$FID" == "ALL_VIDEO" ] || [ "$FID" == "ALL_AUDIO" ]; then
             PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
             echo "#EXTM3U" > "$PLAYLIST_PATH"
-            
-            if [ "$FID" == "ALL_VIDEO" ]; then
-                NAMES=("${V_NAMES[@]}")
-                IDS=("${V_IDS[@]}")
-            else
-                NAMES=("${A_NAMES[@]}")
-                IDS=("${A_IDS[@]}")
-            fi
-
+            if [ "$FID" == "ALL_VIDEO" ]; then NAMES=("${V_NAMES[@]}"); IDS=("${V_IDS[@]}"); else NAMES=("${A_NAMES[@]}"); IDS=("${A_IDS[@]}"); fi
             for i in "${!IDS[@]}"; do
                 echo "#EXTINF:-1,$(basename "${NAMES[$i]}")" >> "$PLAYLIST_PATH"
                 echo "${TORRSERVER_URL}/stream/?link=${HASH}&index=${IDS[$i]}&play" >> "$PLAYLIST_PATH"
@@ -132,7 +155,6 @@ while true; do
         echo "LAST_URL=\"$FINAL_URL\"" > "$HISTORY_FILE"
         echo "LAST_TITLE=\"$TITLE\"" >> "$HISTORY_FILE"
 
-        play_video "$FINAL_URL" "$TITLE"
+        play_video "$FINAL_URL" "$TITLE" "$SUB_ARG"
     fi
-    # После завершения видео цикл начнется заново, возвращая в поиск
 done
