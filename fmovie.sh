@@ -16,7 +16,7 @@ fi
 
 mkdir -p "$(dirname "$HISTORY_FILE")"
 
-# Очистка экрана при запуске
+# Очистка экрана
 clear
 
 # Функция запуска mpv
@@ -24,11 +24,20 @@ play_video() {
     local URL="$1"
     local TITLE="$2"
     
-    # --msg-level=all=status делает вывод более чистым
+    # --really-quiet убирает весь лишний текст и "лесенку"
+    # --term-status-msg позволяет видеть только время в одной строке
     if [[ "$URL" == *.m3u ]]; then
-        mpv --save-position-on-quit --msg-level=all=status --title="Movie-CLI: $TITLE" --playlist="$URL"
+        mpv --save-position-on-quit \
+            --really-quiet \
+            --term-status-msg='${playback-time} / ${duration} (${percent-pos}%)' \
+            --title="Movie-CLI: $TITLE" \
+            --playlist="$URL"
     else
-        mpv --save-position-on-quit --msg-level=all=status --title="Movie-CLI: $TITLE" "$URL"
+        mpv --save-position-on-quit \
+            --really-quiet \
+            --term-status-msg='${playback-time} / ${duration} (${percent-pos}%)' \
+            --title="Movie-CLI: $TITLE" \
+            "$URL"
     fi
 }
 
@@ -54,7 +63,6 @@ CHOICE=$(fzf --disabled --ansi --header "🔍 Живой поиск | Esc для
     --delimiter='\t' --with-nth=1 --height=80% --reverse \
     --preview "echo {1}" --preview-window=top:3:wrap)
 
-# Очистка после fzf
 clear
 
 [ -z "$CHOICE" ] && exit 0
@@ -95,10 +103,9 @@ if [ $TOTAL_MEDIA -gt 1 ]; then
     rm "$LIST_FILE"
     FID=$(echo "$FILE_CHOICE" | cut -f1)
 else
-    FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
+    FID=$(echo "$FILES" | jq -r '.file_stats[0].id' 2>/dev/null || echo "0")
 fi
 
-# Очистка после выбора серии
 clear
 
 if [ -n "$FID" ]; then
@@ -112,7 +119,6 @@ if [ -n "$FID" ]; then
         done
         FINAL_URL="$PLAYLIST_PATH"
     else
-        FID=$(echo "$FILES" | jq -r '.file_stats[0].id' 2>/dev/null || echo "0")
         FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${FID}&play"
     fi
 
