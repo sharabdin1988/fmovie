@@ -53,25 +53,49 @@ done
 echo ""
 if echo "$FILES" | jq -e 'type == "array"' > /dev/null; then FILES=$(echo "$FILES" | jq '.[0]'); fi
 
-# Фильтруем только видеофайлы
-FILTERED_FILES=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
-IFS=$'\n' read -r -d '' -a F_NAMES < <(echo "$FILTERED_FILES" | jq -r '.path' && printf '\0')
-IFS=$'\n' read -r -d '' -a F_IDS < <(echo "$FILTERED_FILES" | jq -r '.id' && printf '\0')
+# Фильтруем медиафайлы
+VIDEO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
+AUDIO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mp3|flac|wav|m4a|ogg|aac|opus)$"; "i"))')
 
-if [ ${#F_NAMES[@]} -gt 1 ]; then
-    echo "0) 📺 ИГРАТЬ ВСЁ (плейлист)"
-    for i in "${!F_NAMES[@]}"; do printf "%2d) %s\n" "$((i+1))" "$(basename "${F_NAMES[$i]}")"; done
-    echo -n "👉 Выберите серию: "; read -r FC
+# Списки имен и ID для вывода
+IFS=$'\n' read -r -d '' -a V_NAMES < <(echo "$VIDEO_FILES_JSON" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a V_IDS < <(echo "$VIDEO_FILES_JSON" | jq -r '.id' && printf '\0')
+IFS=$'\n' read -r -d '' -a A_NAMES < <(echo "$AUDIO_FILES_JSON" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a A_IDS < <(echo "$AUDIO_FILES_JSON" | jq -r '.id' && printf '\0')
+
+if [ ${#V_NAMES[@]} -gt 1 ] || [ ${#A_NAMES[@]} -gt 1 ]; then
+    [ ${#V_NAMES[@]} -gt 0 ] && echo "0) 📺 ИГРАТЬ ВСЁ ВИДЕО (плейлист)"
+    [ ${#A_NAMES[@]} -gt 0 ] && echo "00) 🎵 ИГРАТЬ ВСЁ АУДИО (плейлист)"
     
-    if [ "$FC" == "0" ]; then
-        # Плейлист для всех файлов торрента
+    # Объединяем списки для отображения
+    COMBINED_NAMES=("${V_NAMES[@]}" "${A_NAMES[@]}")
+    COMBINED_IDS=("${V_IDS[@]}" "${A_IDS[@]}")
+    
+    for i in "${!COMBINED_NAMES[@]}"; do 
+        printf "%2d) %s\n" "$((i+1))" "$(basename "${COMBINED_NAMES[$i]}")"
+    done
+    
+    echo -n "👉 Ваш выбор: "; read -r FC
+    
+    if [ "$FC" == "0" ] && [ ${#V_NAMES[@]} -gt 0 ]; then
         FINAL_URL="${TORRSERVER_URL}/stream/playlist.m3u?link=${HASH}"
+    elif [ "$FC" == "00" ] && [ ${#A_NAMES[@]} -gt 0 ]; then
+        # Плейлист для аудио
+        PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
+        echo "#EXTM3U" > "$PLAYLIST_PATH"
+        for i in "${!A_IDS[@]}"; do
+            echo "#EXTINF:-1,$(basename "${A_NAMES[$i]}")" >> "$PLAYLIST_PATH"
+            echo "${TORRSERVER_URL}/stream/?link=${HASH}&index=${A_IDS[$i]}&play" >> "$PLAYLIST_PATH"
+        done
+        FINAL_URL="$PLAYLIST_PATH"
     else
-        FID=${F_IDS[$((FC-1))]}
+        FID=${COMBINED_IDS[$((FC-1))]}
         FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${FID}&play"
     fi
 else
-    FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${F_IDS[0]}&play"
+    # Один файл
+    FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
+    FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${FID}&play"
 fi
 
 # Сохраняем в историю

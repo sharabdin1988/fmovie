@@ -70,35 +70,56 @@ echo ""
 
 if echo "$FILES" | jq -e 'type == "array"' > /dev/null; then FILES=$(echo "$FILES" | jq '.[0]'); fi
 
-# Фильтруем только видеофайлы
-FILTERED_FILES=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
-IFS=$'\n' read -r -d '' -a F_NAMES < <(echo "$FILTERED_FILES" | jq -r '.path' && printf '\0')
-IFS=$'\n' read -r -d '' -a F_IDS < <(echo "$FILTERED_FILES" | jq -r '.id' && printf '\0')
+# Фильтруем медиафайлы
+VIDEO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
+AUDIO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mp3|flac|wav|m4a|ogg|aac|opus)$"; "i"))')
 
-if [ ${#F_NAMES[@]} -gt 1 ]; then
+# Списки имен и ID для вывода
+IFS=$'\n' read -r -d '' -a V_NAMES < <(echo "$VIDEO_FILES_JSON" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a V_IDS < <(echo "$VIDEO_FILES_JSON" | jq -r '.id' && printf '\0')
+IFS=$'\n' read -r -d '' -a A_NAMES < <(echo "$AUDIO_FILES_JSON" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a A_IDS < <(echo "$AUDIO_FILES_JSON" | jq -r '.id' && printf '\0')
+
+if [ ${#V_NAMES[@]} -gt 1 ] || [ ${#A_NAMES[@]} -gt 1 ]; then
     LIST_FILE=$(mktemp)
-    echo -e "ALL\t00) 📺 ИГРАТЬ ВСЁ (плейлист)" > "$LIST_FILE"
-    for i in "${!F_NAMES[@]}"; do
-        echo -e "${F_IDS[$i]}\t$(basename "${F_NAMES[$i]}")" >> "$LIST_FILE"
+    [ ${#V_NAMES[@]} -gt 0 ] && echo -e "ALL_VIDEO\t00) 📺 ИГРАТЬ ВСЁ ВИДЕО" > "$LIST_FILE"
+    [ ${#A_NAMES[@]} -gt 0 ] && echo -e "ALL_AUDIO\t00) 🎵 ИГРАТЬ ВСЁ АУДИО" >> "$LIST_FILE"
+    
+    # Добавляем видео в список
+    for i in "${!V_NAMES[@]}"; do
+        echo -e "${V_IDS[$i]}\t$(basename "${V_NAMES[$i]}")" >> "$LIST_FILE"
+    done
+    # Добавляем аудио в список
+    for i in "${!A_NAMES[@]}"; do
+        echo -e "${A_IDS[$i]}\t$(basename "${A_NAMES[$i]}")" >> "$LIST_FILE"
     done
     
-    FILE_CHOICE=$(cat "$LIST_FILE" | fzf --delimiter='\t' --with-nth=2 --height=40% --reverse --header="📺 Выберите серию")
+    FILE_CHOICE=$(cat "$LIST_FILE" | fzf --delimiter='\t' --with-nth=2 --height=40% --reverse --header="📺 Выберите файл")
     rm "$LIST_FILE"
     
     FID=$(echo "$FILE_CHOICE" | cut -f1)
 else
-    FID=${F_IDS[0]}
+    # Если файл всего один (любого типа)
+    FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
 fi
 
 [ -z "$FID" ] && exit 0
 
-if [ "$FID" == "ALL" ]; then
+if [ "$FID" == "ALL_VIDEO" ] || [ "$FID" == "ALL_AUDIO" ]; then
     PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
     echo "#EXTM3U" > "$PLAYLIST_PATH"
-    for i in "${!F_IDS[@]}"; do
-        # Добавляем название серии для mpv
-        echo "#EXTINF:-1,$(basename "${F_NAMES[$i]}")" >> "$PLAYLIST_PATH"
-        echo "${TORRSERVER_URL}/stream/?link=${HASH}&index=${F_IDS[$i]}&play" >> "$PLAYLIST_PATH"
+    
+    if [ "$FID" == "ALL_VIDEO" ]; then
+        NAMES=("${V_NAMES[@]}")
+        IDS=("${V_IDS[@]}")
+    else
+        NAMES=("${A_NAMES[@]}")
+        IDS=("${A_IDS[@]}")
+    fi
+
+    for i in "${!IDS[@]}"; do
+        echo "#EXTINF:-1,$(basename "${NAMES[$i]}")" >> "$PLAYLIST_PATH"
+        echo "${TORRSERVER_URL}/stream/?link=${HASH}&index=${IDS[$i]}&play" >> "$PLAYLIST_PATH"
     done
     FINAL_URL="$PLAYLIST_PATH"
 else
