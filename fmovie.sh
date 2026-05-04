@@ -16,6 +16,9 @@ fi
 
 mkdir -p "$(dirname "$HISTORY_FILE")"
 
+# Очистка экрана при запуске
+clear
+
 # Функция запуска mpv
 play_video() {
     local URL="$1"
@@ -54,6 +57,9 @@ CHOICE=$(fzf --disabled --ansi --header "🔍 Живой поиск | Esc для
     --prompt "Поиск > " --bind "change:reload:$SELF --api {q}" \
     --delimiter='\t' --with-nth=1 --height=80% --reverse \
     --preview "echo {1}" --preview-window=top:3:wrap)
+
+# Очистка после fzf
+clear
 
 [ -z "$CHOICE" ] && exit 0
 
@@ -96,6 +102,9 @@ else
     FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
 fi
 
+# Очистка после выбора серии
+clear
+
 if [ -n "$FID" ]; then
     if [ "$FID" == "ALL_VIDEO" ] || [ "$FID" == "ALL_AUDIO" ]; then
         PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
@@ -115,3 +124,6 @@ if [ -n "$FID" ]; then
 
     play_video "$FINAL_URL" "$TITLE"
 fi
+
+# Пустая строка в конце для чистоты терминала
+echo ""
