@@ -24,18 +24,16 @@ play_video() {
     local URL="$1"
     local TITLE="$2"
     
-    # --really-quiet убирает весь лишний текст и "лесенку"
-    # --term-status-msg позволяет видеть только время в одной строке
+    # Возвращаем аккуратный стандартный вывод без "лесенки"
+    # --msg-level=all=status,cplayer=info оставляет только важную информацию
     if [[ "$URL" == *.m3u ]]; then
         mpv --save-position-on-quit \
-            --really-quiet \
-            --term-status-msg='${playback-time} / ${duration} (${percent-pos}%)' \
+            --msg-level=all=status,cplayer=info \
             --title="Movie-CLI: $TITLE" \
             --playlist="$URL"
     else
         mpv --save-position-on-quit \
-            --really-quiet \
-            --term-status-msg='${playback-time} / ${duration} (${percent-pos}%)' \
+            --msg-level=all=status,cplayer=info \
             --title="Movie-CLI: $TITLE" \
             "$URL"
     fi
