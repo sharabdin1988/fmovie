@@ -80,7 +80,10 @@ IFS=$'\n' read -r -d '' -a V_IDS < <(echo "$VIDEO_FILES_JSON" | jq -r '.id' && p
 IFS=$'\n' read -r -d '' -a A_NAMES < <(echo "$AUDIO_FILES_JSON" | jq -r '.path' && printf '\0')
 IFS=$'\n' read -r -d '' -a A_IDS < <(echo "$AUDIO_FILES_JSON" | jq -r '.id' && printf '\0')
 
-if [ ${#V_NAMES[@]} -gt 1 ] || [ ${#A_NAMES[@]} -gt 1 ]; then
+# Общее количество медиафайлов
+TOTAL_MEDIA=$(( ${#V_NAMES[@]} + ${#A_NAMES[@]} ))
+
+if [ $TOTAL_MEDIA -gt 1 ]; then
     LIST_FILE=$(mktemp)
     [ ${#V_NAMES[@]} -gt 0 ] && echo -e "ALL_VIDEO\t00) 📺 ИГРАТЬ ВСЁ ВИДЕО" > "$LIST_FILE"
     [ ${#A_NAMES[@]} -gt 0 ] && echo -e "ALL_AUDIO\t00) 🎵 ИГРАТЬ ВСЁ АУДИО" >> "$LIST_FILE"
