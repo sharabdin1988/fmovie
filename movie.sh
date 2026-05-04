@@ -53,8 +53,10 @@ done
 echo ""
 if echo "$FILES" | jq -e 'type == "array"' > /dev/null; then FILES=$(echo "$FILES" | jq '.[0]'); fi
 
-IFS=$'\n' read -r -d '' -a F_NAMES < <(echo "$FILES" | jq -r '.file_stats[] | .path' && printf '\0')
-IFS=$'\n' read -r -d '' -a F_IDS < <(echo "$FILES" | jq -r '.file_stats[] | .id' && printf '\0')
+# Фильтруем только видеофайлы
+FILTERED_FILES=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
+IFS=$'\n' read -r -d '' -a F_NAMES < <(echo "$FILTERED_FILES" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a F_IDS < <(echo "$FILTERED_FILES" | jq -r '.id' && printf '\0')
 
 if [ ${#F_NAMES[@]} -gt 1 ]; then
     echo "0) 📺 ИГРАТЬ ВСЁ (плейлист)"
