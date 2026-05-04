@@ -5,8 +5,6 @@ JACKETT_URL="https://jac-red.ru"
 API_KEY="00000000000000000000000000000000"
 TORRSERVER_URL="http://localhost:8090"
 HISTORY_FILE="$HOME/.cache/movie-cli-last"
-SUB_DIR="$HOME/.cache/mpv_subs"
-SUBLIMINAL="/Users/sharabdin/Library/Python/3.9/bin/subliminal"
 
 if command -v realpath >/dev/null 2>&1; then
     SELF=$(realpath "$0")
@@ -16,58 +14,17 @@ else
            echo "$0")
 fi
 
-mkdir -p "$(dirname "$HISTORY_FILE")" "$SUB_DIR"
+mkdir -p "$(dirname "$HISTORY_FILE")"
 
 # Функция запуска mpv
 play_video() {
     local URL="$1"
     local TITLE="$2"
-    local EXTRA_ARGS=("${@:3}")
     
     if [[ "$URL" == *.m3u ]]; then
-        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" --playlist="$URL" "${EXTRA_ARGS[@]}"
+        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" --playlist="$URL"
     else
-        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" "$URL" "${EXTRA_ARGS[@]}"
-    fi
-}
-
-# Функция очистки названия для поиска субтитров
-clean_title() {
-    local T="$1"
-    # Удаляем содержимое квадратных и круглых скобок, технические данные
-    echo "$T" | sed -E 's/\[[^]]+\]//g; s/\([^)]+\)//g; s/1080p|720p|WEB-DL|BDRip|AVC|x264|x265|HEVC//gi; s/[._]/ /g; s/  +/ /g' | xargs
-}
-
-# Функция поиска субтитров в терминале
-get_subtitles() {
-    local RAW_TITLE="$1"
-    local TITLE=$(clean_title "$RAW_TITLE")
-    
-    echo "🔍 Авто-поиск для: $TITLE"
-    echo "📝 Если не найдет, можно будет ввести название вручную."
-    
-    # Пытаемся скачать лучший вариант
-    $SUBLIMINAL download -l ru -l en --directory "$SUB_DIR" "$TITLE" >/dev/null 2>&1
-    
-    local SUB_FILE=$(ls -t "$SUB_DIR" | head -n 1)
-    
-    # Если ничего не скачалось или файл старый (не относится к текущему поиску)
-    # Простая проверка: если в папке пусто или последний файл создан более 30 сек назад
-    if [ -z "$SUB_FILE" ] || [ $(find "$SUB_DIR/$SUB_FILE" -mmin +0.5 | wc -l) -gt 0 ]; then
-        echo "❌ Авто-поиск не дал результатов."
-        read -p "⌨️ Введите название для ручного поиска (или Enter для отмены): " MANUAL_TITLE
-        if [ -n "$MANUAL_TITLE" ]; then
-             echo "⏳ Ищу субтитры для: $MANUAL_TITLE..."
-             $SUBLIMINAL download -l ru -l en --directory "$SUB_DIR" "$MANUAL_TITLE" >/dev/null 2>&1
-             SUB_FILE=$(ls -t "$SUB_DIR" | head -n 1)
-        fi
-    fi
-    
-    if [ -n "$SUB_FILE" ] && [ $(find "$SUB_DIR/$SUB_FILE" -mmin -0.5 | wc -l) -gt 0 ]; then
-        echo "✅ Субтитры найдены: $SUB_FILE"
-        echo "--sub-file=$SUB_DIR/$SUB_FILE"
-    else
-        echo "❌ Субтитры не найдены."
+        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" "$URL"
     fi
 }
 
@@ -141,15 +98,6 @@ while true; do
     fi
 
     if [ -n "$FID" ]; then
-        SUB_ARG=""
-        if [ "$FID" != "ALL_AUDIO" ] && [ ${#V_NAMES[@]} -gt 0 ]; then
-             read -p "💬 Найти субтитры? (y/N): " -n 1 -r
-             echo
-             if [[ $REPLY =~ ^[Yy]$ ]]; then
-                 SUB_ARG=$(get_subtitles "$TITLE")
-             fi
-        fi
-
         if [ "$FID" == "ALL_VIDEO" ] || [ "$FID" == "ALL_AUDIO" ]; then
             PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
             echo "#EXTM3U" > "$PLAYLIST_PATH"
@@ -166,6 +114,6 @@ while true; do
         echo "LAST_URL=\"$FINAL_URL\"" > "$HISTORY_FILE"
         echo "LAST_TITLE=\"$TITLE\"" >> "$HISTORY_FILE"
 
-        play_video "$FINAL_URL" "$TITLE" "$SUB_ARG"
+        play_video "$FINAL_URL" "$TITLE"
     fi
 done
