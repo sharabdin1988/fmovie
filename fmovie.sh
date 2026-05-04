@@ -31,31 +31,43 @@ play_video() {
     fi
 }
 
+# Функция очистки названия для поиска субтитров
+clean_title() {
+    local T="$1"
+    # Удаляем содержимое квадратных и круглых скобок, технические данные
+    echo "$T" | sed -E 's/\[[^]]+\]//g; s/\([^)]+\)//g; s/1080p|720p|WEB-DL|BDRip|AVC|x264|x265|HEVC//gi; s/[._]/ /g; s/  +/ /g' | xargs
+}
+
 # Функция поиска субтитров в терминале
 get_subtitles() {
-    local TITLE="$1"
-    echo "🔍 Поиск субтитров для: $TITLE..."
+    local RAW_TITLE="$1"
+    local TITLE=$(clean_title "$RAW_TITLE")
     
-    # Получаем список
-    local SUB_LIST=$($SUBLIMINAL list -l ru -l en "$TITLE" 2>/dev/null | grep "<")
+    echo "🔍 Авто-поиск для: $TITLE"
+    echo "📝 Если не найдет, можно будет ввести название вручную."
     
-    if [ -z "$SUB_LIST" ]; then
-        echo "❌ Субтитры не найдены."
-        return 1
+    # Пытаемся скачать лучший вариант
+    $SUBLIMINAL download -l ru -l en --directory "$SUB_DIR" "$TITLE" >/dev/null 2>&1
+    
+    local SUB_FILE=$(ls -t "$SUB_DIR" | head -n 1)
+    
+    # Если ничего не скачалось или файл старый (не относится к текущему поиску)
+    # Простая проверка: если в папке пусто или последний файл создан более 30 сек назад
+    if [ -z "$SUB_FILE" ] || [ $(find "$SUB_DIR/$SUB_FILE" -mmin +0.5 | wc -l) -gt 0 ]; then
+        echo "❌ Авто-поиск не дал результатов."
+        read -p "⌨️ Введите название для ручного поиска (или Enter для отмены): " MANUAL_TITLE
+        if [ -n "$MANUAL_TITLE" ]; then
+             echo "⏳ Ищу субтитры для: $MANUAL_TITLE..."
+             $SUBLIMINAL download -l ru -l en --directory "$SUB_DIR" "$MANUAL_TITLE" >/dev/null 2>&1
+             SUB_FILE=$(ls -t "$SUB_DIR" | head -n 1)
+        fi
     fi
     
-    local CHOICE=$(echo "$SUB_LIST" | fzf --header "💬 Выберите субтитры (Esc для отмены)" --reverse --height=40%)
-    
-    if [ -n "$CHOICE" ]; then
-        local LANG=$(echo "$CHOICE" | grep -o "\[[a-z][a-z]\]" | tr -d '[]')
-        echo "⏳ Загрузка [$LANG]..."
-        $SUBLIMINAL download -l "$LANG" --directory "$SUB_DIR" "$TITLE" >/dev/null 2>&1
-        
-        # Находим скачанный файл (самый свежий в папке с этим названием)
-        local SUB_FILE=$(ls -t "$SUB_DIR" | head -n 1)
-        if [ -n "$SUB_FILE" ]; then
-            echo "--sub-file=$SUB_DIR/$SUB_FILE"
-        fi
+    if [ -n "$SUB_FILE" ] && [ $(find "$SUB_DIR/$SUB_FILE" -mmin -0.5 | wc -l) -gt 0 ]; then
+        echo "✅ Субтитры найдены: $SUB_FILE"
+        echo "--sub-file=$SUB_DIR/$SUB_FILE"
+    else
+        echo "❌ Субтитры не найдены."
     fi
 }
 
@@ -129,7 +141,6 @@ while true; do
     fi
 
     if [ -n "$FID" ]; then
-        # Перед запуском спрашиваем про субтитры (только для видео)
         SUB_ARG=""
         if [ "$FID" != "ALL_AUDIO" ] && [ ${#V_NAMES[@]} -gt 0 ]; then
              read -p "💬 Найти субтитры? (y/N): " -n 1 -r
