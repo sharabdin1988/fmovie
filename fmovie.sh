@@ -24,24 +24,20 @@ play_video() {
     local URL="$1"
     local TITLE="$2"
     
+    # --msg-level=all=status делает вывод более чистым
     if [[ "$URL" == *.m3u ]]; then
-        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" --playlist="$URL"
+        mpv --save-position-on-quit --msg-level=all=status --title="Movie-CLI: $TITLE" --playlist="$URL"
     else
-        mpv --save-position-on-quit --title="Movie-CLI: $TITLE" "$URL"
+        mpv --save-position-on-quit --msg-level=all=status --title="Movie-CLI: $TITLE" "$URL"
     fi
 }
 
 # --- Логика Resume ---
-if [ "$1" == "--resume" ]; then
-    if [ -f "$HISTORY_FILE" ]; then
-        echo "↩️ Восстанавливаю последний просмотр..."
-        source "$HISTORY_FILE"
-        play_video "$LAST_URL" "$LAST_TITLE"
-        exit 0
-    else
-        echo "❌ История пуста."
-        exit 1
-    fi
+if [ "$1" == "--resume" ] && [ -f "$HISTORY_FILE" ]; then
+    echo "↩️ Восстанавливаю последний просмотр..."
+    source "$HISTORY_FILE"
+    play_video "$LAST_URL" "$LAST_TITLE"
+    exit 0
 fi
 
 # --- Внутренняя функция поиска ---
@@ -116,6 +112,7 @@ if [ -n "$FID" ]; then
         done
         FINAL_URL="$PLAYLIST_PATH"
     else
+        FID=$(echo "$FILES" | jq -r '.file_stats[0].id' 2>/dev/null || echo "0")
         FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${FID}&play"
     fi
 
@@ -124,6 +121,3 @@ if [ -n "$FID" ]; then
 
     play_video "$FINAL_URL" "$TITLE"
 fi
-
-# Пустая строка в конце для чистоты терминала
-echo ""
