@@ -49,71 +49,69 @@ if [ "$1" == "--api" ]; then
     exit
 fi
 
-# --- Основной цикл ---
-while true; do
-    CHOICE=$(fzf --disabled --ansi --header "🔍 Живой поиск | Esc для выхода" \
-        --prompt "Поиск > " --bind "change:reload:$SELF --api {q}" \
-        --delimiter='\t' --with-nth=1 --height=80% --reverse \
-        --preview "echo {1}" --preview-window=top:3:wrap)
+# --- Основной поиск ---
+CHOICE=$(fzf --disabled --ansi --header "🔍 Живой поиск | Esc для выхода" \
+    --prompt "Поиск > " --bind "change:reload:$SELF --api {q}" \
+    --delimiter='\t' --with-nth=1 --height=80% --reverse \
+    --preview "echo {1}" --preview-window=top:3:wrap)
 
-    [ -z "$CHOICE" ] && exit 0
+[ -z "$CHOICE" ] && exit 0
 
-    LINK=$(echo "$CHOICE" | awk -F'\t' '{print $2}' | tr -d '[:space:]')
-    TITLE=$(echo "$CHOICE" | cut -f1)
+LINK=$(echo "$CHOICE" | awk -F'\t' '{print $2}' | tr -d '[:space:]')
+TITLE=$(echo "$CHOICE" | cut -f1)
 
-    echo "🚀 Загрузка торрента..."
-    ADD_RESP=$(curl -s -X POST -d "{\"action\":\"add\", \"link\":\"$LINK\", \"save\":false}" "${TORRSERVER_URL}/torrents")
-    HASH=$(echo "$ADD_RESP" | jq -r 'if type == "array" then .[0].hash else .hash end')
+echo "🚀 Загрузка торрента..."
+ADD_RESP=$(curl -s -X POST -d "{\"action\":\"add\", \"link\":\"$LINK\", \"save\":false}" "${TORRSERVER_URL}/torrents")
+HASH=$(echo "$ADD_RESP" | jq -r 'if type == "array" then .[0].hash else .hash end')
 
-    for i in {1..30}; do
-        FILES=$(curl -s -X POST -d "{\"action\":\"get\", \"hash\":\"$HASH\"}" "${TORRSERVER_URL}/torrents")
-        if echo "$FILES" | jq -e 'if type == "array" then .[0].file_stats else .file_stats end | length > 0' >/dev/null 2>&1; then break; fi
-        sleep 1; echo -n "."
-    done
-    echo ""
-
-    if echo "$FILES" | jq -e 'type == "array"' > /dev/null; then FILES=$(echo "$FILES" | jq '.[0]'); fi
-
-    VIDEO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
-    AUDIO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mp3|flac|wav|m4a|ogg|aac|opus)$"; "i"))')
-
-    IFS=$'\n' read -r -d '' -a V_NAMES < <(echo "$VIDEO_FILES_JSON" | jq -r '.path' && printf '\0')
-    IFS=$'\n' read -r -d '' -a V_IDS < <(echo "$VIDEO_FILES_JSON" | jq -r '.id' && printf '\0')
-    IFS=$'\n' read -r -d '' -a A_NAMES < <(echo "$AUDIO_FILES_JSON" | jq -r '.path' && printf '\0')
-    IFS=$'\n' read -r -d '' -a A_IDS < <(echo "$AUDIO_FILES_JSON" | jq -r '.id' && printf '\0')
-
-    TOTAL_MEDIA=$(( ${#V_NAMES[@]} + ${#A_NAMES[@]} ))
-
-    if [ $TOTAL_MEDIA -gt 1 ]; then
-        LIST_FILE=$(mktemp)
-        [ ${#V_NAMES[@]} -gt 0 ] && echo -e "ALL_VIDEO\t00) 📺 ИГРАТЬ ВСЁ ВИДЕО" > "$LIST_FILE"
-        [ ${#A_NAMES[@]} -gt 0 ] && echo -e "ALL_AUDIO\t00) 🎵 ИГРАТЬ ВСЁ АУДИО" >> "$LIST_FILE"
-        for i in "${!V_NAMES[@]}"; do echo -e "${V_IDS[$i]}\t$(basename "${V_NAMES[$i]}")" >> "$LIST_FILE"; done
-        for i in "${!A_NAMES[@]}"; do echo -e "${A_IDS[$i]}\t$(basename "${A_NAMES[$i]}")" >> "$LIST_FILE"; done
-        FILE_CHOICE=$(cat "$LIST_FILE" | fzf --delimiter='\t' --with-nth=2 --height=40% --reverse --header="📺 Выберите файл (Esc для возврата)")
-        rm "$LIST_FILE"
-        FID=$(echo "$FILE_CHOICE" | cut -f1)
-    else
-        FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
-    fi
-
-    if [ -n "$FID" ]; then
-        if [ "$FID" == "ALL_VIDEO" ] || [ "$FID" == "ALL_AUDIO" ]; then
-            PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
-            echo "#EXTM3U" > "$PLAYLIST_PATH"
-            if [ "$FID" == "ALL_VIDEO" ]; then NAMES=("${V_NAMES[@]}"); IDS=("${V_IDS[@]}"); else NAMES=("${A_NAMES[@]}"); IDS=("${A_IDS[@]}"); fi
-            for i in "${!IDS[@]}"; do
-                echo "#EXTINF:-1,$(basename "${NAMES[$i]}")" >> "$PLAYLIST_PATH"
-                echo "${TORRSERVER_URL}/stream/?link=${HASH}&index=${IDS[$i]}&play" >> "$PLAYLIST_PATH"
-            done
-            FINAL_URL="$PLAYLIST_PATH"
-        else
-            FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${FID}&play"
-        fi
-
-        echo "LAST_URL=\"$FINAL_URL\"" > "$HISTORY_FILE"
-        echo "LAST_TITLE=\"$TITLE\"" >> "$HISTORY_FILE"
-
-        play_video "$FINAL_URL" "$TITLE"
-    fi
+for i in {1..30}; do
+    FILES=$(curl -s -X POST -d "{\"action\":\"get\", \"hash\":\"$HASH\"}" "${TORRSERVER_URL}/torrents")
+    if echo "$FILES" | jq -e 'if type == "array" then .[0].file_stats else .file_stats end | length > 0' >/dev/null 2>&1; then break; fi
+    sleep 1; echo -n "."
 done
+echo ""
+
+if echo "$FILES" | jq -e 'type == "array"' > /dev/null; then FILES=$(echo "$FILES" | jq '.[0]'); fi
+
+VIDEO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mkv|mp4|avi|ts|m4v|mov|flv|webm|mpg|mpeg|wmv)$"; "i"))')
+AUDIO_FILES_JSON=$(echo "$FILES" | jq -c '.file_stats[] | select(.path | test("\\.(mp3|flac|wav|m4a|ogg|aac|opus)$"; "i"))')
+
+IFS=$'\n' read -r -d '' -a V_NAMES < <(echo "$VIDEO_FILES_JSON" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a V_IDS < <(echo "$VIDEO_FILES_JSON" | jq -r '.id' && printf '\0')
+IFS=$'\n' read -r -d '' -a A_NAMES < <(echo "$AUDIO_FILES_JSON" | jq -r '.path' && printf '\0')
+IFS=$'\n' read -r -d '' -a A_IDS < <(echo "$AUDIO_FILES_JSON" | jq -r '.id' && printf '\0')
+
+TOTAL_MEDIA=$(( ${#V_NAMES[@]} + ${#A_NAMES[@]} ))
+
+if [ $TOTAL_MEDIA -gt 1 ]; then
+    LIST_FILE=$(mktemp)
+    [ ${#V_NAMES[@]} -gt 0 ] && echo -e "ALL_VIDEO\t00) 📺 ИГРАТЬ ВСЁ ВИДЕО" > "$LIST_FILE"
+    [ ${#A_NAMES[@]} -gt 0 ] && echo -e "ALL_AUDIO\t00) 🎵 ИГРАТЬ ВСЁ АУДИО" >> "$LIST_FILE"
+    for i in "${!V_NAMES[@]}"; do echo -e "${V_IDS[$i]}\t$(basename "${V_NAMES[$i]}")" >> "$LIST_FILE"; done
+    for i in "${!A_NAMES[@]}"; do echo -e "${A_IDS[$i]}\t$(basename "${A_NAMES[$i]}")" >> "$LIST_FILE"; done
+    FILE_CHOICE=$(cat "$LIST_FILE" | fzf --delimiter='\t' --with-nth=2 --height=40% --reverse --header="📺 Выберите файл (Esc для возврата)")
+    rm "$LIST_FILE"
+    FID=$(echo "$FILE_CHOICE" | cut -f1)
+else
+    FID=$(echo "$FILES" | jq -r '.file_stats[0].id')
+fi
+
+if [ -n "$FID" ]; then
+    if [ "$FID" == "ALL_VIDEO" ] || [ "$FID" == "ALL_AUDIO" ]; then
+        PLAYLIST_PATH="$HOME/.cache/movie_playlist.m3u"
+        echo "#EXTM3U" > "$PLAYLIST_PATH"
+        if [ "$FID" == "ALL_VIDEO" ]; then NAMES=("${V_NAMES[@]}"); IDS=("${V_IDS[@]}"); else NAMES=("${A_NAMES[@]}"); IDS=("${A_IDS[@]}"); fi
+        for i in "${!IDS[@]}"; do
+            echo "#EXTINF:-1,$(basename "${NAMES[$i]}")" >> "$PLAYLIST_PATH"
+            echo "${TORRSERVER_URL}/stream/?link=${HASH}&index=${IDS[$i]}&play" >> "$PLAYLIST_PATH"
+        done
+        FINAL_URL="$PLAYLIST_PATH"
+    else
+        FINAL_URL="${TORRSERVER_URL}/stream/?link=${HASH}&index=${FID}&play"
+    fi
+
+    echo "LAST_URL=\"$FINAL_URL\"" > "$HISTORY_FILE"
+    echo "LAST_TITLE=\"$TITLE\"" >> "$HISTORY_FILE"
+
+    play_video "$FINAL_URL" "$TITLE"
+fi
